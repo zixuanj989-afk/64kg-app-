@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:a="http://schemas.android.com/apk/res/android">
+    <application
+        a:allowBackup="true"
+        a:icon="@drawable/ic_launcher"
+        a:label="64KG"
+        a:supportsRtl="true"
+        a:theme="@style/AppTheme">
+        <activity
+            a:name=".MainActivityV8"
+            a:exported="true"
+            a:screenOrientation="portrait">
+            <intent-filter>
+                <action a:name="android.intent.action.MAIN" />
+                <category a:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
