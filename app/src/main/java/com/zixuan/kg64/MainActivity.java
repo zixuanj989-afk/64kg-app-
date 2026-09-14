@@ -1,12 +1,13 @@
 package com.zixuan.kg64;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -29,6 +30,7 @@ public class MainActivity extends Activity {
     private static final int CREAM = Color.rgb(245, 243, 234);
     private static final int LIME = Color.rgb(216, 255, 82);
     private static final int MUTED = Color.rgb(105, 108, 100);
+    private static final int SOFT = Color.rgb(235, 233, 224);
     private static final float TARGET = 64f;
     private final LocalDate goalDate = LocalDate.of(2026, 10, 1);
 
@@ -38,8 +40,18 @@ public class MainActivity extends Activity {
     private TextView gapValue;
     private TextView liquidValue;
     private TextView trendValue;
-    private EditText caloriesInput;
-    private String movement = "未记录";
+    private TextView intakeValue;
+    private TextView activityPlanValue;
+    private TextView actualActivityValue;
+
+    private EditText sleepInput;
+    private EditText breakfastStaple, breakfastProtein, breakfastVeg, breakfastOther;
+    private EditText lunchStaple, lunchProtein, lunchVeg, lunchOther;
+    private EditText dinnerStaple, dinnerProtein, dinnerVeg, dinnerOther;
+    private EditText snackStaple, snackProtein, snackVeg, snackOther;
+    private EditText ballMinutesInput, walkStepsInput, runLapsInput;
+
+    private boolean rendering = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,9 +63,12 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
+        rendering = true;
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setBackgroundColor(CREAM);
+
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(36));
@@ -63,14 +78,19 @@ public class MainActivity extends Activity {
         brand.setLetterSpacing(.14f);
         root.addView(brand);
         root.addView(space(8));
-        root.addView(text("把今天做好，就在靠近。", 25, true, INK));
+        root.addView(text("睡好 → 吃清楚 → 动起来", 25, true, INK));
         root.addView(space(18));
 
         LinearLayout hero = row();
         LinearLayout wBox = statBox("当前体重", "--", "kg");
         weightValue = (TextView) ((LinearLayout) wBox.getChildAt(1)).getChildAt(0);
         hero.addView(wBox, new LinearLayout.LayoutParams(0, dp(136), 1));
-        LinearLayout dBox = statBox("目标倒数", String.valueOf(Math.max(0, ChronoUnit.DAYS.between(LocalDate.now(), goalDate))), "天");
+
+        LinearLayout dBox = statBox(
+                "目标倒数",
+                String.valueOf(Math.max(0, ChronoUnit.DAYS.between(LocalDate.now(), goalDate))),
+                "天"
+        );
         hero.addView(dBox, new LinearLayout.LayoutParams(0, dp(136), 1));
         root.addView(card(hero, INK));
         root.addView(space(14));
@@ -81,9 +101,70 @@ public class MainActivity extends Activity {
         liquidValue = miniStat(mini, "本周液断", "剩 2 次");
         root.addView(card(mini, Color.WHITE));
 
-        section("今日记录", "数据保存在本机，再次打开仍会保留");
+        section("① 睡眠", "每天先填睡眠；后面的运动建议会跟着变化");
+        LinearLayout sleepCard = vertical();
+        sleepInput = decimalInput("昨晚睡了多少小时，例如 7.5");
+        sleepInput.setText(pref("sleep_hours"));
+        watch(sleepInput, "sleep_hours");
+        sleepCard.addView(sleepInput, new LinearLayout.LayoutParams(-1, dp(52)));
+        sleepCard.addView(space(8));
+        sleepCard.addView(text("睡眠不足时，App 会自动降低当天运动建议，不会要求你用运动硬抵消摄入。", 12, false, MUTED));
+        root.addView(card(sleepCard, Color.WHITE));
+
+        section("② 吃饭", "全部用“1拳”做统一体积单位；每拳热量是估算值");
+        root.addView(text("统一换算：主食 1拳≈180 kcal｜蛋白质 1拳≈160 kcal｜蔬菜 1拳≈50 kcal｜其他/高油食物 1拳≈220 kcal", 12, false, MUTED));
+        root.addView(space(10));
+
+        root.addView(mealEditor("早餐", "breakfast"));
+        root.addView(space(8));
+        root.addView(mealEditor("午餐", "lunch"));
+        root.addView(space(8));
+        root.addView(mealEditor("晚餐", "dinner"));
+        root.addView(space(8));
+        root.addView(mealEditor("加餐", "snack"));
+
+        root.addView(space(10));
+        intakeValue = text("今日摄入估算：0 kcal", 18, true, INK);
+        intakeValue.setPadding(dp(14), dp(13), dp(14), dp(13));
+        intakeValue.setBackground(round(LIME));
+        root.addView(intakeValue);
+
+        section("③ 运动", "根据今天吃了多少 + 睡了多久，自动给出活动目标与等价运动");
+        activityPlanValue = text("", 15, true, INK);
+        activityPlanValue.setLineSpacing(0, 1.35f);
+        root.addView(card(activityPlanValue, Color.WHITE));
+        root.addView(space(10));
+
+        LinearLayout exerciseCard = vertical();
+        exerciseCard.addView(text("填写你实际完成的运动量", 15, true, INK));
+        exerciseCard.addView(space(8));
+
+        ballMinutesInput = numberInput("打球：分钟");
+        ballMinutesInput.setText(pref("ball_minutes_actual"));
+        watch(ballMinutesInput, "ball_minutes_actual");
+        exerciseCard.addView(ballMinutesInput, new LinearLayout.LayoutParams(-1, dp(50)));
+        exerciseCard.addView(space(7));
+
+        walkStepsInput = numberInput("快走：步数");
+        walkStepsInput.setText(pref("walk_steps_actual"));
+        watch(walkStepsInput, "walk_steps_actual");
+        exerciseCard.addView(walkStepsInput, new LinearLayout.LayoutParams(-1, dp(50)));
+        exerciseCard.addView(space(7));
+
+        runLapsInput = decimalInput("跑步：400m 操场圈数");
+        runLapsInput.setText(pref("run_laps_actual"));
+        watch(runLapsInput, "run_laps_actual");
+        exerciseCard.addView(runLapsInput, new LinearLayout.LayoutParams(-1, dp(50)));
+        exerciseCard.addView(space(8));
+
+        actualActivityValue = text("", 13, true, INK);
+        actualActivityValue.setLineSpacing(0, 1.3f);
+        exerciseCard.addView(actualActivityValue);
+        root.addView(card(exerciseCard, Color.WHITE));
+
+        section("体重记录", "记录后会自动更新上方距离目标");
         LinearLayout weightRow = row();
-        EditText weightInput = input("输入体重 kg", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        EditText weightInput = decimalInput("输入体重 kg");
         weightRow.addView(weightInput, new LinearLayout.LayoutParams(0, dp(52), 1));
         Button saveWeight = button("记录", LIME, INK);
         saveWeight.setOnClickListener(v -> saveWeight(weightInput));
@@ -91,17 +172,6 @@ public class MainActivity extends Activity {
         bp.setMargins(dp(10), 0, 0, 0);
         weightRow.addView(saveWeight, bp);
         root.addView(weightRow);
-        root.addView(space(10));
-
-        caloriesInput = input("今日已摄入 kcal", InputType.TYPE_CLASS_NUMBER);
-        caloriesInput.setText(prefs.getString("calories_" + LocalDate.now(), ""));
-        root.addView(caloriesInput, new LinearLayout.LayoutParams(-1, dp(52)));
-        root.addView(space(10));
-        root.addView(movementPicker());
-        root.addView(space(10));
-        Button saveDay = button("保存今日完成情况", INK, Color.WHITE);
-        saveDay.setOnClickListener(v -> saveDay());
-        root.addView(saveDay, new LinearLayout.LayoutParams(-1, dp(54)));
 
         section("体重趋势", "最近记录");
         trendValue = text("", 15, true, INK);
@@ -109,8 +179,7 @@ public class MainActivity extends Activity {
         root.addView(card(trendValue, Color.WHITE));
 
         section("液断日", "每周最多 2 次");
-        LinearLayout liquid = new LinearLayout(this);
-        liquid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout liquid = vertical();
         liquid.addView(text(isLiquidToday() ? "今天是液断日" : "今天正常饮食", 19, true, INK));
         liquid.addView(space(10));
         Button toggle = button(isLiquidToday() ? "取消今天液断" : "设为今天液断", LIME, INK);
@@ -122,17 +191,128 @@ public class MainActivity extends Activity {
         liquid.addView(random, new LinearLayout.LayoutParams(-1, dp(50)));
         root.addView(card(liquid, Color.WHITE));
 
-        section("每日热量分配", "均衡日建议约 1400–1500 kcal");
-        root.addView(meal("早餐", "300–350 kcal", "鸡蛋 1–2 个 + 全麦面包 2 片 / 玉米 1 根 + 无糖豆浆"));
-        root.addView(space(8));
-        root.addView(meal("午餐", "500–550 kcal", "米饭 1 小碗 + 鸡胸 / 牛肉 / 鱼 120–150g + 两拳蔬菜"));
-        root.addView(space(8));
-        root.addView(meal("晚餐", "400–450 kcal", "杂粮饭半碗 + 虾 / 瘦肉 / 豆腐 120g + 两拳蔬菜"));
-        root.addView(space(8));
-        root.addView(meal("加餐", "100–150 kcal", "苹果 / 橙子 1 个，或坚果 10g"));
-
         setContentView(scroll);
         refreshStats();
+        rendering = false;
+        updateDynamicPlan();
+    }
+
+    private View mealEditor(String title, String key) {
+        LinearLayout box = vertical();
+        box.addView(text(title, 18, true, INK));
+        box.addView(space(8));
+
+        EditText staple = decimalInput("主食：几拳（1拳≈180 kcal）");
+        EditText protein = decimalInput("蛋白质：几拳（1拳≈160 kcal）");
+        EditText veg = decimalInput("蔬菜：几拳（1拳≈50 kcal）");
+        EditText other = decimalInput("其他/高油：几拳（1拳≈220 kcal）");
+
+        staple.setText(pref(key + "_staple"));
+        protein.setText(pref(key + "_protein"));
+        veg.setText(pref(key + "_veg"));
+        other.setText(pref(key + "_other"));
+
+        watch(staple, key + "_staple");
+        watch(protein, key + "_protein");
+        watch(veg, key + "_veg");
+        watch(other, key + "_other");
+
+        box.addView(staple, new LinearLayout.LayoutParams(-1, dp(48)));
+        box.addView(space(6));
+        box.addView(protein, new LinearLayout.LayoutParams(-1, dp(48)));
+        box.addView(space(6));
+        box.addView(veg, new LinearLayout.LayoutParams(-1, dp(48)));
+        box.addView(space(6));
+        box.addView(other, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        if ("breakfast".equals(key)) {
+            breakfastStaple = staple; breakfastProtein = protein; breakfastVeg = veg; breakfastOther = other;
+        } else if ("lunch".equals(key)) {
+            lunchStaple = staple; lunchProtein = protein; lunchVeg = veg; lunchOther = other;
+        } else if ("dinner".equals(key)) {
+            dinnerStaple = staple; dinnerProtein = protein; dinnerVeg = veg; dinnerOther = other;
+        } else {
+            snackStaple = staple; snackProtein = protein; snackVeg = veg; snackOther = other;
+        }
+
+        return card(box, Color.WHITE);
+    }
+
+    private void watch(EditText field, String key) {
+        field.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                if (rendering) return;
+                prefs.edit().putString(dayKey(key), s.toString().trim()).apply();
+                updateDynamicPlan();
+            }
+        });
+    }
+
+    private void updateDynamicPlan() {
+        if (intakeValue == null || activityPlanValue == null || actualActivityValue == null) return;
+
+        int intake = Math.round(
+                mealKcal(breakfastStaple, breakfastProtein, breakfastVeg, breakfastOther) +
+                mealKcal(lunchStaple, lunchProtein, lunchVeg, lunchOther) +
+                mealKcal(dinnerStaple, dinnerProtein, dinnerVeg, dinnerOther) +
+                mealKcal(snackStaple, snackProtein, snackVeg, snackOther)
+        );
+        float sleep = f(sleepInput);
+        float weight = prefs.getFloat("weight", 0f);
+
+        intakeValue.setText("今日摄入估算：" + intake + " kcal");
+        prefs.edit().putInt(dayKeyInt("estimated_intake"), intake).apply();
+
+        if (weight <= 0) {
+            activityPlanValue.setText(
+                    "先记录体重后，我才能把建议活动量换算成打球时长、快走步数和跑步圈数。\n" +
+                    "当前已根据饮食和睡眠记录保存今日数据。"
+            );
+            actualActivityValue.setText("记录体重后再计算运动消耗。 ");
+            return;
+        }
+
+        int targetKcal = ActivityPlanner.suggestedActivityKcal(intake, sleep);
+        int ballMin = ActivityPlanner.basketballMinutesFor(targetKcal, weight);
+        int walkSteps = ActivityPlanner.briskWalkStepsFor(targetKcal, weight);
+        float runLaps = ActivityPlanner.runningLapsFor(targetKcal, weight);
+
+        String sleepNote;
+        if (sleep > 0 && sleep < 6f) sleepNote = "睡眠不足 6 小时，今天自动降低运动建议。";
+        else if (sleep >= 6f && sleep < 7f) sleepNote = "睡眠略少，运动建议已适度下调。";
+        else if (sleep >= 7f) sleepNote = "睡眠达到较稳定区间。";
+        else sleepNote = "先填睡眠，运动建议会继续动态调整。";
+
+        activityPlanValue.setText(
+                "建议活动目标：约 " + targetKcal + " kcal（不是要求把摄入全部抵消）\n" +
+                "≈ 打球 " + formatMinutes(ballMin) + "\n" +
+                "≈ 快走 " + walkSteps + " 步\n" +
+                "≈ 跑步 " + oneDecimal(runLaps) + " 圈（400m/圈）\n" +
+                sleepNote
+        );
+
+        int actualBallMin = i(ballMinutesInput);
+        int actualWalkSteps = i(walkStepsInput);
+        float actualRunLaps = f(runLapsInput);
+
+        int ballKcal = ActivityPlanner.metCalories(6.0f, weight, actualBallMin);
+        int walkKcal = ActivityPlanner.briskWalkCalories(weight, actualWalkSteps);
+        int runKcal = ActivityPlanner.runningCalories(weight, actualRunLaps);
+        int actual = ballKcal + walkKcal + runKcal;
+        int remaining = Math.max(0, targetKcal - actual);
+
+        String status = remaining == 0 ? "已达到今天建议活动目标" : "距离建议活动目标还差约 " + remaining + " kcal";
+        actualActivityValue.setText(
+                "实际运动消耗估算：" + actual + " kcal\n" +
+                "打球 " + ballKcal + " + 快走 " + walkKcal + " + 跑步 " + runKcal + " kcal\n" +
+                status
+        );
+    }
+
+    private float mealKcal(EditText staple, EditText protein, EditText veg, EditText other) {
+        return f(staple) * 180f + f(protein) * 160f + f(veg) * 50f + f(other) * 220f;
     }
 
     private void saveWeight(EditText field) {
@@ -141,47 +321,19 @@ public class MainActivity extends Activity {
         float value;
         try { value = Float.parseFloat(raw); } catch (Exception e) { toast("体重格式不对"); return; }
         if (value < 35 || value > 200) { toast("请确认体重数值"); return; }
+
         String today = LocalDate.now().toString();
         List<String> kept = new ArrayList<>();
         for (String line : prefs.getString("history", "").split(";")) {
             if (!line.isEmpty() && !line.startsWith(today + ",")) kept.add(line);
         }
         kept.add(today + "," + value);
+
         prefs.edit().putFloat("weight", value).putString("history", String.join(";", kept)).apply();
         field.setText("");
         refreshStats();
+        updateDynamicPlan();
         toast("已记录 " + trim(value) + " kg");
-    }
-
-    private void saveDay() {
-        String raw = caloriesInput.getText().toString().trim();
-        int calories = 0;
-        try { if (!raw.isEmpty()) calories = Integer.parseInt(raw); } catch (Exception ignored) {}
-        prefs.edit().putString("calories_" + LocalDate.now(), raw).putString("movement_" + LocalDate.now(), movement).apply();
-        StringBuilder msg = new StringBuilder("今日记录已保存");
-        if (calories > 1500) msg.append("\n摄入超过 1500 kcal。下一餐正常清淡即可。");
-        if (movement.equals("未记录") || movement.equals("休息")) msg.append("\n今天没有运动记录。");
-        if (calories > 1500 || movement.equals("未记录") || movement.equals("休息")) {
-            new AlertDialog.Builder(this).setTitle("今日提醒").setMessage(msg).setPositiveButton("知道了", null).show();
-        } else toast("今日记录已保存");
-    }
-
-    private View movementPicker() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.addView(text("今日运动", 13, false, MUTED));
-        box.addView(space(7));
-        LinearLayout choices = row();
-        movement = prefs.getString("movement_" + LocalDate.now(), "未记录");
-        for (String item : new String[]{"跑步", "打球", "休息"}) {
-            Button b = button(item, item.equals(movement) ? LIME : Color.WHITE, INK);
-            b.setOnClickListener(v -> { movement = item; prefs.edit().putString("movement_" + LocalDate.now(), item).apply(); render(); });
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(46), 1);
-            p.setMargins(dp(3), 0, dp(3), 0);
-            choices.addView(b, p);
-        }
-        box.addView(choices);
-        return box;
     }
 
     private void toggleLiquidDay() {
@@ -202,7 +354,7 @@ public class MainActivity extends Activity {
             if (!d.isBefore(LocalDate.now())) options.add(d);
         }
         LocalDate pick = options.get(new Random().nextInt(options.size()));
-        new AlertDialog.Builder(this)
+        new android.app.AlertDialog.Builder(this)
                 .setTitle("本周随机液断日")
                 .setMessage("建议安排在 " + pick.getMonthValue() + " 月 " + pick.getDayOfMonth() + " 日。")
                 .setPositiveButton("设为液断日", (d, w) -> {
@@ -245,6 +397,7 @@ public class MainActivity extends Activity {
         weightValue.setText(weight == 0 ? "--" : trim(weight));
         gapValue.setText(weight == 0 ? "-- kg" : trim(Math.max(0, weight - TARGET)) + " kg");
         liquidValue.setText("剩 " + Math.max(0, 2 - currentWeekLiquidCount(liquidDates())) + " 次");
+
         String raw = prefs.getString("history", "");
         if (raw.isEmpty()) trendValue.setText("还没有体重记录");
         else {
@@ -259,24 +412,41 @@ public class MainActivity extends Activity {
         }
     }
 
-    private View meal(String title, String kcal, String foods) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout head = row();
-        head.addView(text(title, 17, true, INK), new LinearLayout.LayoutParams(0, -2, 1));
-        TextView e = text(kcal, 13, true, INK);
-        e.setPadding(dp(10), dp(5), dp(10), dp(5));
-        e.setBackground(round(LIME));
-        head.addView(e);
-        box.addView(head);
-        box.addView(space(8));
-        box.addView(text(foods, 14, false, MUTED));
-        return card(box, Color.WHITE);
+    private String pref(String key) {
+        return prefs.getString(dayKey(key), "");
+    }
+
+    private String dayKey(String key) {
+        return key + "_" + LocalDate.now();
+    }
+
+    private String dayKeyInt(String key) {
+        return key + "_" + LocalDate.now();
+    }
+
+    private int i(EditText e) {
+        try { return Integer.parseInt(e.getText().toString().trim()); }
+        catch (Exception ex) { return 0; }
+    }
+
+    private float f(EditText e) {
+        try { return Float.parseFloat(e.getText().toString().trim()); }
+        catch (Exception ex) { return 0f; }
+    }
+
+    private String formatMinutes(int minutes) {
+        if (minutes < 60) return minutes + " 分钟";
+        int h = minutes / 60;
+        int m = minutes % 60;
+        return m == 0 ? h + " 小时" : h + " 小时 " + m + " 分钟";
+    }
+
+    private String oneDecimal(float value) {
+        return String.format(Locale.CHINA, "%.1f", value);
     }
 
     private LinearLayout statBox(String label, String value, String unit) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout box = vertical();
         box.setGravity(Gravity.CENTER);
         box.addView(text(label, 12, false, Color.rgb(190, 193, 183)));
         LinearLayout line = row();
@@ -292,8 +462,7 @@ public class MainActivity extends Activity {
     }
 
     private TextView miniStat(LinearLayout parent, String label, String value) {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout box = vertical();
         box.setGravity(Gravity.CENTER);
         box.addView(text(label, 11, false, MUTED));
         TextView v = text(value, 16, true, INK);
@@ -317,6 +486,12 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    private LinearLayout vertical() {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        return v;
+    }
+
     private TextView text(String s, int sp, boolean bold, int color) {
         TextView v = new TextView(this);
         v.setText(s);
@@ -326,10 +501,18 @@ public class MainActivity extends Activity {
         return v;
     }
 
+    private EditText decimalInput(String hint) {
+        return input(hint, InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+    }
+
+    private EditText numberInput(String hint) {
+        return input(hint, InputType.TYPE_CLASS_NUMBER);
+    }
+
     private EditText input(String hint, int type) {
         EditText e = new EditText(this);
         e.setHint(hint);
-        e.setTextSize(15);
+        e.setTextSize(14);
         e.setInputType(type);
         e.setSingleLine();
         e.setPadding(dp(15), 0, dp(15), 0);
@@ -370,7 +553,15 @@ public class MainActivity extends Activity {
         return v;
     }
 
-    private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + .5f); }
-    private String trim(float value) { return value == (long) value ? String.valueOf((long) value) : String.format(Locale.CHINA, "%.1f", value); }
-    private void toast(String s) { Toast.makeText(this, s, Toast.LENGTH_SHORT).show(); }
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density + .5f);
+    }
+
+    private String trim(float value) {
+        return value == (long) value ? String.valueOf((long) value) : String.format(Locale.CHINA, "%.1f", value);
+    }
+
+    private void toast(String s) {
+        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+    }
 }
