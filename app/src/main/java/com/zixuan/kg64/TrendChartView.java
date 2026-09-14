@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -48,7 +47,7 @@ public class TrendChartView extends View {
         textPaint.setTextAlign(Paint.Align.CENTER);
         gridPaint.setColor(0xffe8e6dd);
         gridPaint.setStrokeWidth(dp(1));
-        setMinimumHeight(dp(190));
+        setMinimumHeight(Math.round(dp(190)));
     }
 
     public void setData(List<Point> data) {
